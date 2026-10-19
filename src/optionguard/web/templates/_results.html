@@ -1,0 +1,85 @@
+{% if error %}
+<div class="error">{{ error }}</div>
+{% else %}
+<p class="muted">Ranking: {% for id in ranking %}#{{ id }}{{ ", " if not loop.last }}{% endfor %}</p>
+
+{% for r in results %}
+<div class="card {{ r.verdict }}">
+  <span class="badge {{ r.verdict }}">{{ r.verdict }}</span>
+  {% if r.data_source == "mock" %}<span class="badge mock">MOCK DATA</span>{% endif %}
+  <b>{{ r.symbol }} {{ r.expiry }} {{ r.strike }} {{ r.opt_type }}</b>
+  <span class="muted">#{{ r.id }} ({{ r.data_source }})</span>
+
+  <div class="metrics">
+    <div><span>Spot</span> {{ "%.2f"|format(r.spot) }}</div>
+    <div><span>Premium</span> {{ "%.2f"|format(r.premium) }}</div>
+    <div><span>Breakeven</span> {{ "%.2f"|format(r.breakeven) }} ({{ "%+.1f"|format(r.breakeven_pct*100) }}%)</div>
+    <div><span>IV</span> {{ "%.1f"|format(r.iv*100) if r.iv is not none else "n/a" }}%</div>
+    <div><span>Prob profit</span> {{ "%.0f"|format(r.prob_profit*100) if r.prob_profit is not none else "n/a" }}%</div>
+    <div><span>Prob zero</span> {{ "%.0f"|format(r.prob_zero*100) if r.prob_zero is not none else "n/a" }}%</div>
+    <div><span>Theta/lot/day</span> {{ "%.0f"|format(r.theta_per_day_lot) if r.theta_per_day_lot is not none else "n/a" }}</div>
+    <div><span>Delta</span> {{ "%.2f"|format(r.delta) if r.delta is not none else "n/a" }}</div>
+    <div><span>Move needed/day</span> {{ "%.2f (%.1f%%)"|format(r.daily_move_needed, r.daily_move_needed_pct*100) if r.daily_move_needed is not none else "n/a" }}</div>
+    <div><span>Max lots</span> {{ r.max_lots }}</div>
+  </div>
+
+  {% if r.scenarios %}
+  <div class="muted">Holding-period scenarios (IV held constant):</div>
+  <table>
+    <tr>
+      <th>Days \ Move</th>
+      {% for mv in r.scenarios | map(attribute='move_pct') | unique %}
+      <th>{{ "%+.0f"|format(mv*100) }}%</th>
+      {% endfor %}
+    </tr>
+    {% for d in r.scenarios | map(attribute='days') | unique %}
+    <tr>
+      <td>{{ d }}d</td>
+      {% for mv in r.scenarios | map(attribute='move_pct') | unique %}
+      {% set cell = (r.scenarios | selectattr('days', 'equalto', d) | selectattr('move_pct', 'equalto', mv) | first) %}
+      <td class="{{ 'pnl-pos' if cell.pnl_per_lot > 0 else ('pnl-neg' if cell.pnl_per_lot < 0 else '') }}">{{ "%.0f"|format(cell.pnl_per_lot) }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </table>
+  {% set earnings_note = r.scenarios | selectattr('note', 'defined') | list %}
+  {% if earnings_note %}
+  <p class="muted">{{ earnings_note[0].note }}</p>
+  {% endif %}
+  {% endif %}
+
+  {% if r.flags %}
+  <ul class="flags">
+    {% for f in r.flags %}<li class="{{ f.level }}">{{ f.message }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if r.alternatives and r.alternatives.candidates %}
+  <div class="muted">Alternatives: {% for a in r.alternatives.candidates %}strike {{ a.strike }} ({{ a.verdict }}, prob {{ "%.0f"|format(a.prob_profit*100) if a.prob_profit is not none else "n/a" }}%){{ ", " if not loop.last }}{% endfor %}</div>
+  {% elif r.alternatives and r.alternatives.note %}
+  <div class="muted">{{ r.alternatives.note }}</div>
+  {% endif %}
+
+  {% if r.oi_context %}
+  <div class="muted">OI context (not a signal): max call-OI {{ r.oi_context.max_call_oi_strike }}, max put-OI {{ r.oi_context.max_put_oi_strike }}, PCR {{ "%.2f"|format(r.oi_context.pcr_oi) if r.oi_context.pcr_oi is not none else "n/a" }}</div>
+  {% endif %}
+
+  <details>
+    <summary class="muted">Take trade</summary>
+    <form hx-post="/trades-html" hx-target="#take-trade-{{ r.id }}" hx-swap="innerHTML">
+      <input type="hidden" name="check_id" value="{{ r.id }}">
+      <div class="row">
+        <div><label>Lots (max {{ r.max_lots }})</label><input type="number" name="lots" max="{{ r.max_lots }}" min="1" value="{{ r.max_lots if r.max_lots > 0 else 1 }}" required></div>
+        <div><label>Entry premium</label><input type="number" step="0.01" name="entry_premium" value="{{ r.premium }}" required></div>
+      </div>
+      {% if r.verdict == 'red' %}
+      <label>Override reason (required, 15+ chars, red verdict)</label>
+      <input type="text" name="override_reason" minlength="15">
+      {% endif %}
+      <button type="submit" class="secondary">Record trade</button>
+    </form>
+    <div id="take-trade-{{ r.id }}"></div>
+  </details>
+</div>
+{% endfor %}
+{% endif %}

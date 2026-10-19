@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Journal</h1>
+
+<form hx-get="/journal" hx-target="body" hx-push-url="true">
+  <label>Group by</label>
+  <select name="group_by" onchange="this.form.requestSubmit()">
+    {% for g in ["verdict", "exit_reason", "month", "symbol", "override"] %}
+    <option value="{{ g }}" {{ "selected" if g == group_by else "" }}>{{ g }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+<table>
+  <tr><th>{{ group_by }}</th><th>Count</th><th>Win rate</th><th>Avg P&amp;L</th><th>Total P&amp;L</th></tr>
+  {% for s in stats %}
+  <tr>
+    <td>{{ s.group }}</td><td>{{ s.count }}</td>
+    <td>{{ "%.0f"|format(s.win_rate*100) }}%</td>
+    <td>{{ "%.0f"|format(s.avg_pnl) }}</td>
+    <td>{{ "%.0f"|format(s.total_pnl) }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>Checks (traded and skipped)</h2>
+<table>
+  <tr><th>#</th><th>Symbol</th><th>Expiry</th><th>Strike/Type</th><th>Verdict</th><th>Settle</th></tr>
+  {% for c in checks %}
+  <tr>
+    <td>{{ c.id }}</td><td>{{ c.symbol }}</td><td>{{ c.expiry }}</td>
+    <td>{{ c.strike }} {{ c.opt_type }}</td>
+    <td><span class="badge {{ c.verdict }}">{{ c.verdict }}</span></td>
+    <td>{{ c.expiry_settle if c.expiry_settle is not none else "-" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

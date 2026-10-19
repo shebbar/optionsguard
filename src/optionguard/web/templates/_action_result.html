@@ -1,0 +1,5 @@
+{% if error %}
+<div class="error">{{ error.code }}: {{ error.message }}</div>
+{% else %}
+<div class="muted">Done.{% if trade.pnl is not none %} P&amp;L: {{ "%.0f"|format(trade.pnl) }}{% endif %}</div>
+{% endif %}

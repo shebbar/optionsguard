@@ -1,0 +1,18 @@
+<input type="hidden" name="line_count" value="{{ lines|length }}">
+{% for line in lines %}
+<div class="manual-row">
+  <div class="muted">{{ line }}</div>
+  <input type="hidden" name="line_{{ loop.index0 }}" value="{{ line }}">
+  <div class="row">
+    <div><label>Spot</label><input type="number" step="0.01" name="manual_spot_{{ loop.index0 }}" required></div>
+    <div><label>Premium</label><input type="number" step="0.01" name="manual_premium_{{ loop.index0 }}" required></div>
+    <div><label>Lot size</label><input type="number" name="manual_lot_size_{{ loop.index0 }}" required></div>
+    <div><label>Expiry</label><input type="date" name="manual_expiry_{{ loop.index0 }}" required></div>
+  </div>
+  <div class="row">
+    <div><label>Bid (optional)</label><input type="number" step="0.01" name="manual_bid_{{ loop.index0 }}"></div>
+    <div><label>Ask (optional)</label><input type="number" step="0.01" name="manual_ask_{{ loop.index0 }}"></div>
+    <div><label>HV20 (optional)</label><input type="number" step="0.01" name="manual_hv20_{{ loop.index0 }}"></div>
+  </div>
+</div>
+{% endfor %}

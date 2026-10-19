@@ -1,0 +1,10 @@
+{% if status.kite_mode == "mock" %}
+<div class="mock-banner">MOCK DATA -- no real Kite credentials configured. Every "kite"-sourced number on this page is simulated, not real market data.</div>
+{% endif %}
+<div class="statusbar">
+  <span>Kite: <b>{{ 'mock' if status.kite_mock_mode else ('logged in' if status.kite_logged_in else 'login required') }}</b></span>
+  <span>Month P&amp;L: <b>{{ "%.0f"|format(status.month_realised_pnl) }}</b> / limit {{ "%.0f"|format(status.monthly_loss_limit) }}</span>
+  {% if status.in_cooloff %}
+    <span style="color:#b42318"><b>Cooling off since {{ status.cooloff_trigger_date }}</b></span>
+  {% endif %}
+</div>

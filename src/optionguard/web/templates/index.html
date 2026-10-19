@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Check</h1>
+<p class="muted">One candidate per line: <code>SYMBOL MON STRIKE CE|PE</code>, e.g. <code>TCS NOV 2500 CE</code>. Optional thesis: <code>@2550 by 2026-11-10</code>.</p>
+
+<form id="check-form">
+  <label>Source</label>
+  <select name="source" id="source-select" onchange="document.getElementById('manual-rows').innerHTML=''">
+    <option value="kite">Kite (mock until real API keys exist)</option>
+    <option value="manual">Manual</option>
+  </select>
+
+  <label>Candidates</label>
+  <textarea name="text" id="text-area" rows="4" placeholder="TCS NOV 2500 CE"></textarea>
+
+  <div class="row">
+    <button type="button" class="secondary"
+      hx-post="/checks/prepare" hx-include="#check-form" hx-target="#manual-rows" hx-swap="innerHTML">
+      Prepare manual fields
+    </button>
+    <button type="button"
+      hx-post="/checks-html" hx-include="#check-form" hx-target="#results" hx-swap="innerHTML">
+      Run checks
+    </button>
+  </div>
+</form>
+
+<div id="manual-rows"></div>
+<div id="results"></div>
+{% endblock %}

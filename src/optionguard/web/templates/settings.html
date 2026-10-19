@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Settings</h1>
+<p class="muted">Loosening a rule takes effect the next trading day 09:00 IST. Tightening is immediate.</p>
+
+<form hx-post="/settings-html" hx-target="#settings-result" hx-swap="innerHTML">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="row">
+    <div><label>Max loss per trade</label><input type="number" name="max_loss_per_trade" value="{{ settings.max_loss_per_trade }}"></div>
+    <div><label>Monthly loss limit</label><input type="number" name="monthly_loss_limit" value="{{ settings.monthly_loss_limit }}"></div>
+  </div>
+  <div class="row">
+    <div><label>Premium stop %</label><input type="number" step="0.01" name="premium_stop_pct" value="{{ settings.premium_stop_pct }}"></div>
+    <div><label>Time stop (trading days before expiry)</label><input type="number" name="time_stop_days" value="{{ settings.time_stop_days }}"></div>
+  </div>
+  <div class="row">
+    <div><label>Cool-off days</label><input type="number" name="cooloff_days" value="{{ settings.cooloff_days }}"></div>
+  </div>
+  <button type="submit">Update settings</button>
+</form>
+<div id="settings-result"></div>
+
+<h2>Kite</h2>
+<p class="muted">{{ "Running in mock mode -- no login required." if status.kite_mock_mode else ("Logged in." if status.kite_logged_in else "Not logged in.") }}</p>
+{% if not status.kite_mock_mode and not status.kite_logged_in %}
+<a class="btn" href="/kite/login">Log in to Kite</a>
+{% endif %}
+
+<h2>Corporate events</h2>
+<table>
+  <tr><th>Symbol</th><th>Type</th><th>Date</th><th>Dividend</th></tr>
+  {% for e in events %}
+  <tr><td>{{ e.symbol }}</td><td>{{ e.event_type }}</td><td>{{ e.event_date }}</td><td>{{ e.dividend if e.dividend is not none else "-" }}</td></tr>
+  {% endfor %}
+</table>
+<form hx-post="/events-html" hx-target="#events-result" hx-swap="innerHTML">
+  <div class="row">
+    <div><label>Symbol</label><input type="text" name="symbol" required></div>
+    <div><label>Type</label>
+      <select name="event_type"><option value="earnings">earnings</option><option value="dividend">dividend</option></select>
+    </div>
+  </div>
+  <div class="row">
+    <div><label>Date</label><input type="date" name="event_date" required></div>
+    <div><label>Dividend (if applicable)</label><input type="number" step="0.01" name="dividend"></div>
+  </div>
+  <button type="submit" class="secondary">Add event</button>
+</form>
+<div id="events-result"></div>
+
+<h2>Holidays (from config.toml, read-only)</h2>
+<p class="muted">{{ holidays|join(", ") }}</p>
+{% endblock %}

@@ -1,0 +1,40 @@
+# Joins the external `pwm-net` network to reach the `pgdb` Postgres container
+# (shared with other local apps -- see ~/systems/postgres/docker-compose.yml)
+# by its container name, since 127.0.0.1 inside this container isn't pgdb.
+#
+# One-time setup:
+#   docker network create pwm-net || true
+#   docker compose -f ~/systems/postgres/docker-compose.yml up -d
+#   createdb optionguard   # or: docker exec pgdb psql -U <user> -d postgres -c "CREATE DATABASE optionguard;"
+#
+# Then:
+#   cp .env.example .env   # fill in DATABASE_URL_DOCKER (and KITE_* if you have them)
+#   docker compose up --build
+#
+# Bound to the host's 127.0.0.1 only -- never exposed beyond localhost, same
+# guarantee as running `uv run optionguard serve` directly.
+#
+# The MCP server (mcp_server/server.py) is NOT part of this compose file --
+# Claude Desktop spawns it itself as a local stdio subprocess (see README),
+# which doesn't fit a long-running container. Point its OPTIONGUARD_URL at
+# http://127.0.0.1:8787, same as this service publishes.
+services:
+  app:
+    build: .
+    container_name: optionguard
+    env_file:
+      - .env
+    environment:
+      # Overrides whatever DATABASE_URL is in .env (that one's for running
+      # `uv run optionguard serve` directly on the host, where pgdb is reached
+      # via its published port on 127.0.0.1 -- inside this container it has
+      # to be reached by its container name on the shared Docker network instead).
+      DATABASE_URL: ${DATABASE_URL_DOCKER:?Set DATABASE_URL_DOCKER in .env -- see .env.example}
+    ports:
+      - "127.0.0.1:8787:8787"
+    networks:
+      - pwm-net
+
+networks:
+  pwm-net:
+    external: true
