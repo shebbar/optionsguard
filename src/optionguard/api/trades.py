@@ -17,6 +17,7 @@ from optionguard.db.models import Trade
 from optionguard.db.session import get_db
 from optionguard.market.base import NotAvailable
 from optionguard.market.factory import apply_kite_session, get_kite_provider, get_mock_kite_provider
+from optionguard.orders.service import sync_gtt_after_stop_change
 from optionguard.pricing.calendar import trading_day_before, trading_days_to_expiry
 from optionguard.rules import guardrails
 from optionguard.rules.errors import RuleViolation
@@ -110,6 +111,11 @@ def post_tighten(trade_id: int, body: TightenIn, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(trade)
+    if body.stop_premium is not None:
+        # Section 7.8.5: the one Kite-side effect allowed from /api/v1 --
+        # tighten can only reduce risk, so it's safe to let it move the
+        # real GTT too.
+        trade = sync_gtt_after_stop_change(db, get_config(), trade=trade)
     return trade_to_dict(trade)
 
 
@@ -162,6 +168,10 @@ def post_loosen(trade_id: int, body: LoosenIn, db: Session = Depends(get_db)):
     repo.add_override(db, trade_id=trade.id, rule="LOOSEN_STOP", reason=body.reason)
     db.commit()
     db.refresh(trade)
+    if body.stop_premium is not None:
+        # Section 7.8.5: loosen also moves the real GTT -- it's logged via
+        # the override above either way, same as loosening always was.
+        trade = sync_gtt_after_stop_change(db, get_config(), trade=trade)
     return trade_to_dict(trade)
 
 
@@ -215,5 +225,20 @@ def get_positions(db: Session = Depends(get_db)):
         )
         entry["trading_days_to_time_stop"] = trading_days_to_expiry(today, trade.time_stop_date, holidays)
         entry["trading_days_to_expiry"] = trading_days_to_expiry(today, check.expiry, holidays) if check else None
+        out.append(entry)
+    return out
+
+
+@router.get("/trades/closed")
+def get_closed_trades(db: Session = Depends(get_db)):
+    out = []
+    for trade in repo.list_closed_trades(db):
+        check = repo.get_check(db, trade.check_id)
+        entry = trade_to_dict(trade)
+        entry["symbol"] = check.symbol if check else None
+        entry["expiry"] = check.expiry.isoformat() if check else None
+        entry["strike"] = float(check.strike) if check else None
+        entry["opt_type"] = check.opt_type if check else None
+        entry["data_source"] = check.data_source if check else None
         out.append(entry)
     return out

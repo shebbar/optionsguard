@@ -164,3 +164,18 @@ def get_check(check_id: int, db: Session = Depends(get_db)):
     if row is None:
         raise ApiError("NOT_FOUND", f"check {check_id} not found", status_code=404)
     return check_to_dict(row)
+
+
+@router.delete("/checks/{check_id}")
+def delete_check(check_id: int, db: Session = Depends(get_db)):
+    row = repo.get_check(db, check_id)
+    if row is None:
+        raise ApiError("NOT_FOUND", f"check {check_id} not found", status_code=404)
+    if check_id in repo.set_of_referenced_check_ids(db):
+        raise ApiError(
+            "CHECK_HAS_REFERENCES",
+            f"check {check_id} led to a trade, thesis, order, or override -- it can't be deleted.",
+            status_code=409,
+        )
+    repo.delete_check(db, check_id)
+    return {"deleted": check_id}

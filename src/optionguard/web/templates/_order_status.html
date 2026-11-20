@@ -1,0 +1,22 @@
+<div id="order-status-wrap"
+     {% if intent.status == "placed" %}
+     hx-get="/order/{{ intent.id }}/status-html" hx-trigger="every {{ orders_cfg.fill_poll_seconds }}s" hx-swap="outerHTML"
+     {% endif %}>
+  {% if intent.status == "placed" %}
+    <div class="muted">Order {{ intent.order_id }} is open at Kite -- checking every {{ orders_cfg.fill_poll_seconds }}s.</div>
+    <form id="modify-form-{{ intent.id }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>New price</label><input type="number" step="0.01" name="price" value="{{ intent.price }}">
+      <button type="button" hx-post="/order/{{ intent.id }}/modify-html" hx-include="#modify-form-{{ intent.id }}"
+              hx-target="#order-status-wrap" hx-swap="outerHTML">Modify price</button>
+      <button type="button" class="danger" hx-post="/order/{{ intent.id }}/cancel-html" hx-include="#modify-form-{{ intent.id }}"
+              hx-target="#order-status-wrap" hx-swap="outerHTML" onclick="return confirm('Cancel this order?')">Cancel</button>
+    </form>
+  {% elif intent.status in ("filled", "partial") %}
+    <div class="muted">Filled {{ intent.filled_qty }} @ {{ intent.average_price }} ({{ intent.status }}). Refresh Positions to see the result.</div>
+  {% elif intent.status == "rejected" %}
+    <div class="error">Rejected: {{ intent.kite_message or "unknown reason" }}</div>
+  {% elif intent.status == "cancelled" %}
+    <div class="muted">Cancelled.</div>
+  {% endif %}
+</div>

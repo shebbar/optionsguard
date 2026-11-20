@@ -38,11 +38,12 @@ def get_journal_checks(
     to: date | None = None,
     verdict: str | None = None,
     traded: bool | None = None,
+    acted: bool | None = None,
     limit: int = 200,
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
     rows = repo.list_checks(
-        db, date_from=from_, date_to=to, verdict=verdict, traded=traded, limit=limit, offset=offset
+        db, date_from=from_, date_to=to, verdict=verdict, traded=traded, acted=acted, limit=limit, offset=offset
     )
     return [check_to_dict(r) for r in rows]

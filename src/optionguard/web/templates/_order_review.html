@@ -1,0 +1,27 @@
+{% if intent.status == "rejected" %}
+<div class="error">{{ intent.kite_message or "Rejected." }}</div>
+{% elif intent.status != "reviewed" %}
+<div class="muted">This intent is already {{ intent.status }}.</div>
+{% else %}
+<div class="metrics">
+  <div><span>Quantity</span> {{ intent.quantity }}</div>
+  <div><span>Price</span> {{ intent.price }}</div>
+  <div><span>Cost</span> {{ "%.0f"|format(intent.price * intent.quantity) }}</div>
+  {% if intent.kind == "entry" %}
+  <div><span>Stop premium</span> {{ intent.stop_premium }}</div>
+  <div><span>Loss at stop</span> {{ "%.0f"|format((intent.price - intent.stop_premium) * intent.quantity) if intent.stop_premium is not none else "n/a" }}</div>
+  <div><span>Loss if stop gaps 2x</span> {{ "%.0f"|format((intent.price - intent.stop_premium) * intent.quantity * 2) if intent.stop_premium is not none else "n/a" }}</div>
+  {% if intent.target_premium is not none %}<div><span>Target premium</span> {{ intent.target_premium }}</div>{% endif %}
+  {% else %}
+  <div><span>Estimated proceeds</span> {{ "%.0f"|format(intent.price * intent.quantity) }}</div>
+  {% endif %}
+</div>
+<form id="confirm-form-{{ intent.id }}">
+  <input type="hidden" name="intent_id" value="{{ intent.id }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="button" hx-post="/order/confirm-html" hx-include="#confirm-form-{{ intent.id }}"
+          hx-target="#confirm-result-{{ intent.id }}" hx-swap="innerHTML" hx-disabled-elt="this"
+          onclick="return confirm('Place this order?')">Confirm</button>
+</form>
+<div id="confirm-result-{{ intent.id }}"></div>
+{% endif %}

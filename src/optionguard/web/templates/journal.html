@@ -3,12 +3,23 @@
 <h1>Journal</h1>
 
 <form hx-get="/journal" hx-target="body" hx-push-url="true">
-  <label>Group by</label>
-  <select name="group_by" onchange="this.form.requestSubmit()">
-    {% for g in ["verdict", "exit_reason", "month", "symbol", "override"] %}
-    <option value="{{ g }}" {{ "selected" if g == group_by else "" }}>{{ g }}</option>
-    {% endfor %}
-  </select>
+  <div class="row">
+    <div>
+      <label>Group by</label>
+      <select name="group_by" onchange="this.form.requestSubmit()">
+        {% for g in ["verdict", "exit_reason", "month", "symbol", "override"] %}
+        <option value="{{ g }}" {{ "selected" if g == group_by else "" }}>{{ g }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Checks list</label>
+      <select name="acted_only" onchange="this.form.requestSubmit()">
+        <option value="true" {{ "selected" if acted_only else "" }}>Acted on only (thesis or trade)</option>
+        <option value="false" {{ "selected" if not acted_only else "" }}>All checks (incl. skipped)</option>
+      </select>
+    </div>
+  </div>
 </form>
 
 <table>
@@ -23,15 +34,23 @@
   {% endfor %}
 </table>
 
-<h2>Checks (traded and skipped)</h2>
+<h2>Checks {{ "(acted on: thesis or trade)" if acted_only else "(traded and skipped)" }}</h2>
 <table>
-  <tr><th>#</th><th>Symbol</th><th>Expiry</th><th>Strike/Type</th><th>Verdict</th><th>Settle</th></tr>
+  <tr><th>#</th><th>Symbol</th><th>Expiry</th><th>Strike/Type</th><th>Verdict</th><th>Settle</th><th></th></tr>
   {% for c in checks %}
-  <tr>
+  <tr id="check-row-{{ c.id }}">
     <td>{{ c.id }}</td><td>{{ c.symbol }}</td><td>{{ c.expiry }}</td>
     <td>{{ c.strike }} {{ c.opt_type }}</td>
     <td><span class="badge {{ c.verdict }}">{{ c.verdict }}</span></td>
     <td>{{ c.expiry_settle if c.expiry_settle is not none else "-" }}</td>
+    <td>
+      {% if c.deletable %}
+      <form hx-post="/journal/checks/{{ c.id }}/delete-html" hx-target="#check-row-{{ c.id }}" hx-swap="delete">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="danger" onclick="return confirm('Permanently delete check #{{ c.id }}? This cannot be undone.')">Delete</button>
+      </form>
+      {% endif %}
+    </td>
   </tr>
   {% endfor %}
 </table>

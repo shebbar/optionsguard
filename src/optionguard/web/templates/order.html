@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Order ticket</h1>
+
+{% if error %}
+<div class="error">{{ error }}</div>
+{% else %}
+
+{% if not orders_cfg.enabled %}
+<div class="mock-banner">Order placement is disabled ([orders].enabled = false) -- this ticket is preview only. Review works; Confirm will be refused.</div>
+{% endif %}
+
+<div class="card {{ 'green' if kind == 'entry' else 'red' }}">
+  <span class="badge {{ 'green' if kind == 'entry' else 'red' }}">{{ "BUY" if kind == "entry" else "SELL" }}</span>
+  {% if check.data_source == "mock" %}<span class="badge mock">MOCK</span>{% endif %}
+  <b>{{ check.symbol }} {{ check.expiry }} {{ check.strike }} {{ check.opt_type }}</b> <span class="muted">NFO</span>
+
+  {% include "_order_quote.html" %}
+
+  {% if thesis %}
+  <div class="mock-banner" style="background:#444">
+    Linked to option thesis #{{ thesis.id }} ({{ thesis.why }}). Lots/stop/target below are pre-filled from the
+    thesis -- you can tighten them (smaller lots, a stop no further from entry, a target no further from entry)
+    but not loosen them.
+  </div>
+  {% endif %}
+  <form id="order-form">
+    <input type="hidden" name="kind" value="{{ kind }}">
+    {% if kind == "entry" %}
+    <input type="hidden" name="check_id" value="{{ check.id }}">
+    {% if thesis %}<input type="hidden" name="thesis_id" value="{{ thesis.id }}">{% endif %}
+    <div class="row">
+      <div><label>Quantity (lots, max {{ check.max_lots }})</label><input type="number" name="lots" min="1" max="{{ check.max_lots }}" value="{{ thesis.lots if thesis else (check.max_lots if check.max_lots > 0 else 1) }}" required></div>
+      <div><label>Price (LIMIT)</label><input type="number" step="0.01" name="price" value="{{ quote.ask }}" required></div>
+    </div>
+    <div class="row">
+      <div><label>Stop premium{{ "" if thesis else " (blank = settings default)" }}</label><input type="number" step="0.01" name="stop_premium" value="{{ thesis.stop_premium if thesis else '' }}"></div>
+      <div><label>Target premium{{ "" if thesis else " (optional, OCO)" }}</label><input type="number" step="0.01" name="target_premium" value="{{ thesis.target_premium if thesis else '' }}"></div>
+    </div>
+    {% if check.verdict == "red" %}
+    <label>Override reason (required, 15+ chars, red verdict)</label>
+    <input type="text" name="override_reason" minlength="15">
+    {% endif %}
+    {% else %}
+    <input type="hidden" name="trade_id" value="{{ trade.id }}">
+    <div class="row">
+      <div><label>Quantity (units, max {{ trade.lots * trade.lot_size }})</label><input type="number" name="quantity" min="1" max="{{ trade.lots * trade.lot_size }}" value="{{ trade.lots * trade.lot_size }}" required></div>
+      <div><label>Price (LIMIT)</label><input type="number" step="0.01" name="price" value="{{ quote.bid }}" required></div>
+    </div>
+    <label>Exit reason tag (optional)</label>
+    <input type="text" name="override_reason" placeholder="manual">
+    {% endif %}
+    <input type="hidden" name="order_type" value="LIMIT">
+    <button type="button" hx-post="/order/review-html" hx-include="#order-form" hx-target="#review-result" hx-swap="innerHTML" hx-disabled-elt="this">Review</button>
+  </form>
+  <div id="review-result"></div>
+</div>
+{% endif %}
+{% endblock %}

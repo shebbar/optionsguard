@@ -12,6 +12,7 @@
     <a href="/" class="{{ 'active' if active=='check' else '' }}">Check</a>
     <a href="/positions" class="{{ 'active' if active=='positions' else '' }}">Positions</a>
     <a href="/journal" class="{{ 'active' if active=='journal' else '' }}">Journal</a>
+    <a href="/option-theses" class="{{ 'active' if active=='option_theses' else '' }}">Option theses</a>
     <a href="/settings" class="{{ 'active' if active=='settings' else '' }}">Settings</a>
   </nav>
   <div id="statusbar" hx-get="/status-html" hx-trigger="load" hx-swap="innerHTML"></div>

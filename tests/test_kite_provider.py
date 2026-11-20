@@ -1,8 +1,6 @@
 """KiteProvider against the offline MockKiteClient fixture -- no live calls."""
 from __future__ import annotations
 
-from datetime import date
-
 import pytest
 
 from optionguard.market.base import NotAvailable
@@ -12,7 +10,13 @@ from optionguard.market.mock_kite_client import MockKiteClient
 
 @pytest.fixture
 def provider() -> KiteProvider:
-    return KiteProvider(MockKiteClient(api_key="test", today=date(2026, 10, 15)))
+    # No frozen `today` here on purpose: KiteProvider.history() derives its
+    # date range from the real date.today(), not the client's injected
+    # "as of" date, so freezing MockKiteClient to a fixed past date would
+    # make history()'s tail silently drift out of sync with spot() as real
+    # time passes (same default behavior as production, where neither is
+    # frozen either).
+    return KiteProvider(MockKiteClient(api_key="test"))
 
 
 def test_resolve_expiry_is_a_listed_thursday(provider):
@@ -95,5 +99,5 @@ def test_has_gtt_ignores_inactive_gtt(monkeypatch, provider):
 
 
 def test_deterministic_across_instances(provider):
-    other = KiteProvider(MockKiteClient(api_key="test", today=date(2026, 10, 15)))
+    other = KiteProvider(MockKiteClient(api_key="test"))
     assert provider.spot("TCS") == other.spot("TCS")

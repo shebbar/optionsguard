@@ -54,6 +54,28 @@ def trading_day_before(d: date, n: int, holidays: set[date]) -> date:
     return cur
 
 
+def trading_day_after(d: date, n: int, holidays: set[date]) -> date:
+    """n trading days after `d`. Used by section 7.7 to turn a thesis's
+    horizon_days into horizon_end."""
+    count = 0
+    cur = d
+    while count < n:
+        cur += timedelta(days=1)
+        if is_trading_day(cur, holidays):
+            count += 1
+    return cur
+
+
+def trading_day_on_or_before(d: date, holidays: set[date]) -> date:
+    """`d` itself if it's a trading day, else the nearest trading day before
+    it. Section 7.9.7's hold cutoff date is fixed this way: "the last
+    trading day on or before expiry - hold_cutoff_calendar_days"."""
+    cur = d
+    while not is_trading_day(cur, holidays):
+        cur -= timedelta(days=1)
+    return cur
+
+
 def year_fraction(trading_days: int, trading_days_per_year: int = 252) -> float:
     """T = trading_days_to_expiry / 252, per DESIGN.md section 5."""
     return trading_days / trading_days_per_year

@@ -1,7 +1,13 @@
-"""Single-leg alternative strikes. Per DESIGN.md section 7.4: Kite/mock mode
-only, same expiry and type, up to 6 strikes between the requested strike and
-at-the-money, top 2 by prob_profit among verdict != red and max_lots >= 1.
-Spreads are v2."""
+"""Single-leg alternative strikes. Per DESIGN.md section 7.4, revised: Kite/
+mock mode only, same expiry and type, the nearest up to 6 listed strikes to
+the requested one (either side, not just "between it and spot" -- that
+window is empty whenever the requested strike is already the nearest or
+2nd-nearest to spot, which is the common case, not an edge case). Top 2 by
+prob_profit among max_lots >= 1 -- irrespective of verdict colour (red is
+shown too, not excluded): a flag like NEAR_EXPIRY applies identically to
+every strike on the same expiry, so excluding red candidates could silently
+empty the whole list even when a materially better prob_profit exists right
+next door. Spreads are v2."""
 from __future__ import annotations
 
 from dataclasses import replace
@@ -31,14 +37,12 @@ def compute_alternatives(
         return {"candidates": [], "note": "connect Kite for alternatives"}
 
     try:
-        spot = provider.spot(req.symbol)
         all_strikes = provider.list_strikes(req.symbol, req.expiry)
     except NotAvailable:
         return {"candidates": [], "note": "connect Kite for alternatives"}
 
-    lo, hi = sorted([req.strike, spot])
-    candidates = [s for s in all_strikes if lo <= s <= hi and s != req.strike]
-    candidates.sort(key=lambda s: abs(s - spot))
+    candidates = [s for s in all_strikes if s != req.strike]
+    candidates.sort(key=lambda s: abs(s - req.strike))
     candidates = candidates[:MAX_CANDIDATES]
 
     scored = []
@@ -54,7 +58,7 @@ def compute_alternatives(
         )
         flags = verdict_mod.compute_flags(m, alt_req, config.verdict, max_lots=lots, oi_context=None)
         v = verdict_mod.overall_verdict(flags)
-        if v != "red" and lots >= 1:
+        if lots >= 1:
             scored.append({
                 "strike": strike,
                 "verdict": v,

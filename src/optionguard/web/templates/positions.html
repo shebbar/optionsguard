@@ -6,8 +6,15 @@
 {% endif %}
 {% for p in positions %}
 <div class="card">
-  {% if p.data_source == "mock" %}<span class="badge mock">MOCK DATA</span>{% endif %}
-  <b>{{ p.symbol }} {{ p.expiry }} {{ p.strike }} {{ p.opt_type }}</b> <span class="muted">#{{ p.id }}</span>
+  <div class="card-header">
+    <div>
+      {% if p.data_source == "mock" %}<span class="badge mock">MOCK DATA</span>{% endif %}
+      <b>{{ p.symbol }} {{ p.expiry }} {{ p.strike }} {{ p.opt_type }}</b> <span class="muted">#{{ p.id }}</span>
+    </div>
+    {% if p.data_source in ("kite", "mock") %}
+    <a class="btn" href="/order?trade_id={{ p.id }}">Exit via ticket &rarr;</a>
+    {% endif %}
+  </div>
   <div class="metrics">
     <div><span>Lots</span> {{ p.lots }}</div>
     <div><span>Entry premium</span> {{ p.entry_premium }}</div>
@@ -20,6 +27,19 @@
   </div>
   {% if p.has_gtt is not none and not p.has_gtt %}
   <div class="gtt-warning">No matching GTT order found in Kite -- this stop is not enforced anywhere but this app.</div>
+  {% endif %}
+  {% if p.gtt_status == "missing" %}
+  <div class="gtt-warning">Trade #{{ p.id }} has no stop at Zerodha (GTT missing or failed).
+    <form style="display:inline" hx-post="/trades/{{ p.id }}/gtt-html" hx-target="#gtt-{{ p.id }}" hx-swap="innerHTML">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="secondary">Retry GTT</button>
+    </form>
+    <span id="gtt-{{ p.id }}"></span>
+  </div>
+  {% elif p.gtt_status == "triggered" %}
+  <div class="gtt-warning">Trade #{{ p.id }}'s stop fired at Zerodha but didn't fill -- this position is unprotected.
+    <a href="/order?trade_id={{ p.id }}">Exit now &rarr;</a>
+  </div>
   {% endif %}
 
   <details>
@@ -48,7 +68,7 @@
   </details>
 
   <details>
-    <summary class="muted">Exit</summary>
+    <summary class="muted">Record an exit placed elsewhere</summary>
     <form hx-post="/positions/{{ p.id }}/exit-html" hx-target="#action-{{ p.id }}" hx-swap="innerHTML">
       <div class="row">
         <div><label>Exit premium</label><input type="number" step="0.01" name="exit_premium" required></div>
@@ -68,6 +88,24 @@
     </form>
   </details>
   <div id="action-{{ p.id }}"></div>
+</div>
+{% endfor %}
+
+<h2>Closed trades</h2>
+{% if not closed_trades %}<p class="muted">None yet.</p>{% endif %}
+{% for t in closed_trades %}
+<div class="card {{ 'green' if t.pnl and t.pnl > 0 else 'red' }}">
+  {% if t.data_source == "mock" %}<span class="badge mock">MOCK DATA</span>{% endif %}
+  <b>{{ t.symbol }} {{ t.expiry }} {{ t.strike }} {{ t.opt_type }}</b> <span class="muted">#{{ t.id }}</span>
+  <div class="metrics">
+    <div><span>Lots</span> {{ t.lots }}</div>
+    <div><span>Entry time</span> {{ t.entry_time }}</div>
+    <div><span>Entry premium</span> {{ t.entry_premium }}</div>
+    <div><span>Exit premium</span> {{ t.exit_premium if t.exit_premium is not none else "n/a" }}</div>
+    <div><span>Exit reason</span> {{ t.exit_reason if t.exit_reason else "-" }}</div>
+    <div><span>Exit time</span> {{ t.exit_time if t.exit_time else "-" }}</div>
+    <div><span>P&amp;L</span> {{ "%.0f"|format(t.pnl) if t.pnl is not none else "n/a" }}</div>
+  </div>
 </div>
 {% endfor %}
 {% endblock %}

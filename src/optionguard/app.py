@@ -6,7 +6,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from optionguard.api import checks, events, journal, kite_auth, settings as settings_api, status, trades
+from optionguard.api import (
+    checks, events, journal, kite_auth, option_theses, orders, settings as settings_api, status, trades,
+)
 from optionguard.api.errors import ApiError, api_error_handler, not_available_handler, rule_violation_handler
 from optionguard.market.base import NotAvailable
 from optionguard.rules.errors import RuleViolation
@@ -30,10 +32,14 @@ def create_app() -> FastAPI:
     app.include_router(journal.router)
     app.include_router(status.router)
     app.include_router(kite_auth.router)
+    app.include_router(orders.router)
+    app.include_router(option_theses.router)
 
-    # /ui/* -- JSON, UI-only, CSRF-protected (settings loosening, stop loosening)
+    # /ui/* -- JSON, UI-only, CSRF-protected (settings loosening, stop loosening, cancel)
     app.include_router(trades.ui_router)
     app.include_router(settings_api.ui_router)
+    app.include_router(orders.ui_router)
+    app.include_router(option_theses.ui_router)
 
     # server-rendered HTML
     app.include_router(web_router)

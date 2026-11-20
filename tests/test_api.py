@@ -120,7 +120,13 @@ def test_positions_surfaces_has_gtt_for_mock_none_for_manual(client, db, monkeyp
     check = check_resp.json()["results"][0]
     trade_resp = client.post(
         "/api/v1/trades",
-        json={"check_id": check["id"], "lots": 1, "entry_premium": check["premium"], "stop_premium": 0.01},
+        json={
+            "check_id": check["id"], "lots": 1, "entry_premium": check["premium"], "stop_premium": 0.01,
+            # The mock's price path is date-dependent, so TCS's verdict on
+            # any given day could be red -- this test is about has_gtt
+            # semantics, not verdict, so always supply a valid override.
+            "override_reason": "test fixture: verdict is incidental to this test",
+        },
     )
     assert trade_resp.status_code == 200, trade_resp.json()
 
@@ -129,17 +135,30 @@ def test_positions_surfaces_has_gtt_for_mock_none_for_manual(client, db, monkeyp
     assert mock_position["data_source"] == "mock"
     assert mock_position["has_gtt"] is False  # mock never has real GTT orders
 
-    manual_check = client.post(
+    # premium=35 (not something tiny like 1) keeps IV realistic for this
+    # spot/strike -- an implausibly cheap premium drives IV near zero, which
+    # makes the breakeven look many sigmas away and forces a red verdict
+    # regardless of what this test is actually checking (has_gtt semantics).
+    manual_check_resp = client.post(
         "/api/v1/checks",
         json={
             "source": "manual",
-            "candidates": [{"text": "TCS NOV 2500 CE", "manual": {"spot": 2480, "premium": 1, "lot_size": 175, "expiry": "2026-11-26"}}],
+            "candidates": [{"text": "TCS NOV 2500 CE", "manual": {"spot": 2480, "premium": 35, "lot_size": 175, "expiry": "2026-11-26"}}],
         },
-    ).json()["results"][0]
-    manual_trade = client.post(
+    )
+    manual_check = manual_check_resp.json()["results"][0]
+    manual_trade_resp = client.post(
         "/api/v1/trades",
-        json={"check_id": manual_check["id"], "lots": 1, "entry_premium": 1, "stop_premium": 0.01},
-    ).json()
+        json={
+            "check_id": manual_check["id"], "lots": 1, "entry_premium": 35, "stop_premium": 0.01,
+            # Same reasoning as the mock trade above -- e.g. the hardcoded
+            # expiry date here drifts closer to "today" as time passes,
+            # which can trip NEAR_EXPIRY on its own regardless of premium.
+            "override_reason": "test fixture: verdict is incidental to this test",
+        },
+    )
+    assert manual_trade_resp.status_code == 200, manual_trade_resp.json()
+    manual_trade = manual_trade_resp.json()
 
     positions = client.get("/api/v1/positions").json()
     manual_position = next(p for p in positions if p["id"] == manual_trade["id"])

@@ -1,0 +1,6 @@
+<div id="quote-metrics" class="metrics" hx-get="/order/quote-html?{{ quote_query }}" hx-trigger="every 3s" hx-swap="outerHTML">
+  <div><span>LTP</span> {{ quote.last_price }}</div>
+  <div><span>Bid</span> {{ quote.bid if quote.bid is not none else "n/a" }}</div>
+  <div><span>Ask</span> {{ quote.ask if quote.ask is not none else "n/a" }}</div>
+  <div><span>Spread</span> {{ "%.1f"|format(quote.spread_pct*100) if quote.spread_pct is not none else "n/a" }}%</div>
+</div>

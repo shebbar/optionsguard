@@ -95,8 +95,19 @@ def get_positions() -> dict:
     real -- "mock" means simulated, report it as such. has_gtt is True/False for kite/mock
     positions (whether a matching GTT order exists in Kite to actually enforce the stop) or
     null for manual positions where GTT doesn't apply; a False has_gtt means this stop exists
-    only as a number in this app, not as a real protective order."""
+    only as a number in this app, not as a real protective order. gtt_status (section 7.8,
+    added) is "active"/"missing"/"triggered"/"deleted"/null for a position placed through
+    the order ticket -- "missing" or "triggered" both mean the position is currently
+    unprotected and the user should check the web UI's Positions screen."""
     return {"positions": _request("GET", "/api/v1/positions")}
+
+
+@mcp.tool()
+def list_closed_trades() -> dict:
+    """List closed (exited) trades with entry/exit premium, exit reason and realized P&L.
+    Each trade's data_source ("manual"/"mock"/"kite") tells you whether its numbers are
+    real -- "mock" means simulated, report it as such."""
+    return {"trades": _request("GET", "/api/v1/trades/closed")}
 
 
 @mcp.tool()
@@ -177,10 +188,14 @@ def journal_stats(
 
 @mcp.tool()
 def list_checks(
-    from_date: str | None = None, to_date: str | None = None, verdict: str | None = None, traded: bool | None = None
+    from_date: str | None = None, to_date: str | None = None, verdict: str | None = None, traded: bool | None = None,
+    acted: bool | None = None,
 ) -> dict:
     """List past checks (traded and skipped), with expiry_settle once backfilled, so outcomes
-    can be compared even for candidates that were never traded."""
+    can be compared even for candidates that were never traded. acted=True limits this to
+    checks that led to a trade or an option thesis (the same "acted on" filter the web UI's
+    Journal screen defaults to) -- use this instead of traded when the user wants their
+    serious candidates, not every exploratory check."""
     params: dict[str, Any] = {}
     if from_date:
         params["from"] = from_date
@@ -190,6 +205,8 @@ def list_checks(
         params["verdict"] = verdict
     if traded is not None:
         params["traded"] = traded
+    if acted is not None:
+        params["acted"] = acted
     return {"checks": _request("GET", "/api/v1/journal/checks", params=params)}
 
 
@@ -201,6 +218,158 @@ def add_corporate_event(symbol: str, event_type: str, event_date: str, dividend:
     if dividend is not None:
         body["dividend"] = dividend
     return _request("POST", "/api/v1/events", json=body)
+
+
+@mcp.tool()
+def get_settings() -> dict:
+    """Current risk settings: max_loss_per_trade, monthly_loss_limit, premium_stop_pct
+    (the floor for how loose a stop can be), time_stop_days, cooloff_days, show_spreads,
+    and effective_from. Read-only -- there is no tool to change these, only the web UI's
+    Settings screen can (and loosening a limit is delayed to the next trading day there).
+    Use this alongside get_status (realised P&L, headroom) when reasoning about whether a
+    new trade fits within the user's own risk limits."""
+    return _request("GET", "/api/v1/settings")
+
+
+@mcp.tool()
+def list_sectors() -> dict:
+    """Configured sectors (name -> benchmark index), for building add_option_thesis's
+    sector argument."""
+    return _request("GET", "/api/v1/sectors")
+
+
+@mcp.tool()
+def sync_status() -> dict:
+    """The most recent data sync's time and result (orders/GTTs reconciled, checks
+    settled, option theses bars/resolve/score/policies, and any errors). There is no sync
+    trigger over MCP -- syncing happens automatically on Kite login or from the web UI's
+    "Resolve & score" button, never from here."""
+    return _request("GET", "/api/v1/sync/latest")
+
+
+@mcp.tool()
+def list_order_intents(status: str | None = None) -> dict:
+    """Section 7.8, added, read-only. Lists order_intents (reviewed/placed/filled/partial/
+    rejected/cancelled/expired) -- the record of entry/exit tickets reviewed and confirmed
+    in the web UI. status filters to one of those values if given. There is no tool to
+    place, modify or cancel an order here, or to review/confirm one -- orders can only be
+    placed from the web UI's order ticket, never from Claude."""
+    params: dict[str, Any] = {}
+    if status:
+        params["status"] = status
+    return {"intents": _request("GET", "/api/v1/orders/intents", params=params)}
+
+
+@mcp.tool()
+def preview_option_thesis(
+    contract: str, target_premium: float, stop_premium: float, duration_days: int, lots: int = 1, source: str = "kite",
+) -> dict:
+    """Section 7.9: live derived numbers for a planned option thesis -- a view on the
+    OPTION'S OWN PREMIUM (entry/target/stop), not the underlying's price -- before saving
+    anything. Ask the user for target_premium, stop_premium and duration_days yourself;
+    never choose or fill these in on their own judgement. Report reward_risk, risk_per_lot,
+    spot_for_target/spot_for_stop (the underlying level needed for each), and the market-
+    implied odds (mkt_prob_target_first/stop_first/time_exit, from Monte Carlo under
+    today's IV -- risk-neutral odds, not a forecast) verbatim."""
+    return _request(
+        "POST", "/api/v1/option-theses/preview",
+        json={
+            "contract": contract, "source": source, "target_premium": target_premium,
+            "stop_premium": stop_premium, "duration_days": duration_days, "lots": lots,
+        },
+    )
+
+
+@mcp.tool()
+def add_option_thesis(
+    check_id: int,
+    why: str,
+    target_premium: float,
+    stop_premium: float,
+    duration_days: int,
+    lots: int = 1,
+    sector: str | None = None,
+    override_reason: str | None = None,
+    notes: str | None = None,
+) -> dict:
+    """Record a PAPER option thesis (section 7.9) against a check you already ran with
+    check_options -- paper only; mode="real" is not available here, it needs the web UI's
+    "Save & buy" flow. The check must be less than 30 minutes old.
+
+    Ask the user for why (10-200 chars, the one-line reason), target_premium, stop_premium
+    and duration_days themselves -- never choose these on their own judgement. Call
+    preview_option_thesis first and report its market-implied odds so the user can decide
+    with that in hand. A red-verdict check needs override_reason (15+ characters) -- ask
+    the user for one rather than inventing it. If this returns an `error`, surface its
+    message verbatim -- it is a guardrail, not a bug."""
+    body: dict[str, Any] = {
+        "check_id": check_id, "mode": "paper", "why": why, "target_premium": target_premium,
+        "stop_premium": stop_premium, "duration_days": duration_days, "lots": lots,
+    }
+    if sector is not None:
+        body["sector"] = sector
+    if override_reason is not None:
+        body["override_reason"] = override_reason
+    if notes is not None:
+        body["notes"] = notes
+    return _request("POST", "/api/v1/option-theses", json=body)
+
+
+@mcp.tool()
+def list_option_theses(
+    status: str | None = None, mode: str | None = None, sector: str | None = None, symbol: str | None = None,
+    verdict: str | None = None, from_date: str | None = None, to_date: str | None = None,
+) -> dict:
+    """List option theses (section 7.9). status: "open"|"closed"|"scored"|"cancelled".
+    mode: "paper"|"real"."""
+    params: dict[str, Any] = {}
+    if status:
+        params["status"] = status
+    if mode:
+        params["mode"] = mode
+    if sector:
+        params["sector"] = sector
+    if symbol:
+        params["symbol"] = symbol
+    if verdict:
+        params["verdict"] = verdict
+    if from_date:
+        params["from_date"] = from_date
+    if to_date:
+        params["to_date"] = to_date
+    return {"option_theses": _request("GET", "/api/v1/option-theses", params=params)}
+
+
+@mcp.tool()
+def get_option_thesis(thesis_id: int) -> dict:
+    """One option thesis (section 7.9) with its score and policy comparison results (once
+    scored) or interim progress (live premium vs target/stop, days left) while still open."""
+    return _request("GET", f"/api/v1/option-theses/{thesis_id}")
+
+
+@mcp.tool()
+def update_option_thesis_notes(thesis_id: int, notes: str) -> dict:
+    """Replace an option thesis's freeform notes field (section 7.9). Does not touch
+    target/stop/duration or anything guardrail-relevant -- just the notes text."""
+    return _request("PATCH", f"/api/v1/option-theses/{thesis_id}/notes", json={"notes": notes})
+
+
+@mcp.tool()
+def option_thesis_scorecard(
+    from_date: str | None = None, to_date: str | None = None, mode: str = "all", group_by: str = "none",
+) -> dict:
+    """Aggregated stats across scored option theses (section 7.9) -- mock and cancelled
+    theses excluded, excluded counts reported separately. mode: "paper"|"real"|"all".
+    group_by: "sector"|"verdict"|"outcome"|"symbol"|"opt_type"|"override"|"month"|"none".
+    Includes a policy comparison block (plain/grace3/time_dN/hold, each vs the thesis's own
+    outcome). Report the findings sentences and rates verbatim -- they're computed from
+    real price history, not estimated or inferred by you."""
+    params: dict[str, Any] = {"mode": mode, "group_by": group_by}
+    if from_date:
+        params["from_date"] = from_date
+    if to_date:
+        params["to_date"] = to_date
+    return _request("GET", "/api/v1/option-theses/scorecard", params=params)
 
 
 def main() -> None:

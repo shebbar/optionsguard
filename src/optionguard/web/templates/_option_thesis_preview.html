@@ -1,0 +1,17 @@
+<div class="metrics">
+  <div><span>Spot</span> {{ "%.2f"|format(p.spot) }}</div>
+  <div><span>Entry premium</span> {{ "%.2f"|format(p.entry_premium) }}</div>
+  <div><span>IV</span> {{ "%.1f"|format(p.iv*100) if p.iv is not none else "n/a" }}%</div>
+  <div><span>Reward:risk</span> {{ "%.2f"|format(p.reward_risk) }}</div>
+  <div><span>Risk/lot</span> {{ "%.0f"|format(p.risk_per_lot) }}</div>
+  <div><span>Disaster risk/lot</span> {{ "%.0f"|format(p.disaster_risk_per_lot) }}</div>
+  <div><span>Loss vs cap</span> {{ "%.2f"|format(p.loss_vs_cap) }}{% if p.loss_vs_cap > 1.0 %} <span style="color:#b42318">(exceeds cap -- real mode will reject this)</span>{% endif %}</div>
+  <div><span>Spot for target</span> {{ "%.2f"|format(p.spot_for_target) if p.spot_for_target is not none else "n/a" }}</div>
+  <div><span>Spot for stop</span> {{ "%.2f"|format(p.spot_for_stop) if p.spot_for_stop is not none else "n/a" }}</div>
+</div>
+<p class="muted">
+  Market-implied odds: target first {{ "%.0f"|format(p.mkt_prob_target_first*100) if p.mkt_prob_target_first is not none else "n/a" }}%,
+  stop first {{ "%.0f"|format(p.mkt_prob_stop_first*100) if p.mkt_prob_stop_first is not none else "n/a" }}%,
+  neither {{ "%.0f"|format(p.mkt_prob_time_exit*100) if p.mkt_prob_time_exit is not none else "n/a" }}%.
+  These are risk-neutral odds from today's IV, not a forecast.
+</p>

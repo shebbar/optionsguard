@@ -8,16 +8,13 @@
 #   createdb optionguard   # or: docker exec pgdb psql -U <user> -d postgres -c "CREATE DATABASE optionguard;"
 #
 # Then:
-#   cp .env.example .env   # fill in DATABASE_URL_DOCKER (and KITE_* if you have them)
+#   cp .env.example .env
+#   # fill in DATABASE_URL_DOCKER, and MCP_AUTH_TOKEN if you want the mcp
+#   # service too (openssl rand -hex 32); KITE_* if you have real credentials
 #   docker compose up --build
 #
-# Bound to the host's 127.0.0.1 only -- never exposed beyond localhost, same
-# guarantee as running `uv run optionguard serve` directly.
-#
-# The MCP server (mcp_server/server.py) is NOT part of this compose file --
-# Claude Desktop spawns it itself as a local stdio subprocess (see README),
-# which doesn't fit a long-running container. Point its OPTIONGUARD_URL at
-# http://127.0.0.1:8787, same as this service publishes.
+# Both services are bound to the host's 127.0.0.1 only -- never exposed
+# beyond localhost, same guarantee as running them directly.
 services:
   app:
     build: .
@@ -32,6 +29,26 @@ services:
       DATABASE_URL: ${DATABASE_URL_DOCKER:?Set DATABASE_URL_DOCKER in .env -- see .env.example}
     ports:
       - "127.0.0.1:8787:8787"
+    networks:
+      - pwm-net
+
+  # Streamable HTTP MCP server, for Claude Desktop to reach via a
+  # stdio-to-HTTP bridge like `mcp-remote` instead of spawning
+  # `python -m mcp_server.server` as a local subprocess -- see README.
+  # Deliberately minimal environment: per DESIGN.md, the MCP server never
+  # imports the core or touches the DB, only calls its JSON API, so it gets
+  # no DATABASE_URL/KITE_* at all, not even read access to .env's secrets.
+  mcp:
+    build: .
+    container_name: optionguard-mcp
+    command: ["python", "-m", "mcp_server.http_main"]
+    environment:
+      OPTIONGUARD_URL: http://app:8787  # the `app` service, by its compose service name
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?Set MCP_AUTH_TOKEN in .env -- see .env.example}
+    ports:
+      - "127.0.0.1:4101:4101"
+    depends_on:
+      - app
     networks:
       - pwm-net
 

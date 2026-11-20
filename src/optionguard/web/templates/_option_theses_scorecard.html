@@ -1,0 +1,55 @@
+{% for key, g in scorecard.items() %}
+<div class="card">
+  <b>{{ key }}</b> <span class="muted">n={{ g.n }} cancelled={{ g.n_cancelled }}</span>
+  {% if "win_rate" in g %}
+  <div class="metrics">
+    <div><span>Win rate</span> {{ "%.0f"|format(g.win_rate*100) if g.win_rate is not none else "n/a" }}%</div>
+    <div><span>Target rate</span> {{ "%.0f"|format(g.target_rate*100) if g.target_rate is not none else "n/a" }}%</div>
+    <div><span>Avg win</span> {{ "%.0f"|format(g.avg_win) if g.avg_win is not none else "n/a" }} ({{ "%.2f"|format(g.avg_win_r) if g.avg_win_r is not none else "n/a" }}R)</div>
+    <div><span>Avg loss</span> {{ "%.0f"|format(g.avg_loss) if g.avg_loss is not none else "n/a" }} ({{ "%.2f"|format(g.avg_loss_r) if g.avg_loss_r is not none else "n/a" }}R)</div>
+    <div><span>Payoff ratio</span> {{ "%.2f"|format(g.payoff_ratio) if g.payoff_ratio is not none else "n/a" }}</div>
+    <div><span>Expectancy</span> {{ "%.0f"|format(g.expectancy) if g.expectancy is not none else "n/a" }} ({{ "%.2f"|format(g.expectancy_r) if g.expectancy_r is not none else "n/a" }}R)</div>
+    <div><span>Largest loss</span> {{ "%.0f"|format(g.largest_loss) if g.largest_loss is not none else "n/a" }}</div>
+    <div><span>Largest loss share</span> {{ "%.0f"|format(g.largest_loss_share*100) if g.largest_loss_share is not none else "n/a" }}%</div>
+    <div><span>Stop rate</span> {{ "%.0f"|format(g.stop_rate*100) if g.stop_rate is not none else "n/a" }}%</div>
+    <div><span>Time exit rate</span> {{ "%.0f"|format(g.time_exit_rate*100) if g.time_exit_rate is not none else "n/a" }}%</div>
+    <div><span>Manual rate</span> {{ "%.0f"|format(g.manual_rate*100) if g.manual_rate is not none else "n/a" }}%</div>
+    <div><span>Median days held</span> {{ g.median_days_held if g.median_days_held is not none else "n/a" }}</div>
+    <div><span>Target rate vs market</span> {{ "%.0f"|format(g.target_rate*100) if g.target_rate is not none else "n/a" }}% vs {{ "%.0f"|format(g.mean_mkt_prob_target_first*100) if g.mean_mkt_prob_target_first is not none else "n/a" }}%</div>
+    <div><span>Target after stop rate</span> {{ "%.0f"|format(g.target_after_stop_rate*100) if g.target_after_stop_rate is not none else "n/a" }}%</div>
+    <div><span>Median MFE (stopped/time)</span> {{ "%.0f"|format(g.median_mfe_pct_stopped_or_time*100) if g.median_mfe_pct_stopped_or_time is not none else "n/a" }}%</div>
+  </div>
+  {% endif %}
+
+  {% if g.findings %}
+  <ul>
+    {% for f in g.findings %}<li>{{ f }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if g.independence %}
+  <p class="muted">Independence: {{ g.independence.n_theses }} theses, {{ g.independence.n_distinct_entry_dates }} distinct entry dates, {{ g.independence.n_distinct_entry_date_sector_pairs }} distinct (date, sector) pairs.</p>
+  {% endif %}
+
+  {% if g.policies %}
+  <details>
+    <summary class="muted">Policy comparison</summary>
+    <table>
+      <tr><th>Policy</th><th>n</th><th>Win rate</th><th>Expectancy</th><th>Largest loss share</th><th>vs plain</th></tr>
+      {% for policy, p in g.policies.items() %}
+      <tr>
+        <td>{{ policy }}</td>
+        <td>{{ p.n }}</td>
+        <td>{{ "%.0f"|format(p.win_rate*100) if p.win_rate is not none else "n/a" }}%</td>
+        <td>{{ "%.0f"|format(p.expectancy) if p.expectancy is not none else "n/a" }} ({{ "%.2f"|format(p.expectancy_r) if p.expectancy_r is not none else "n/a" }}R)</td>
+        <td>{{ "%.0f"|format(p.largest_loss_share*100) if p.largest_loss_share is not none else "n/a" }}%</td>
+        <td>{% if p.vs_plain %}better {{ p.vs_plain.better }}, worse {{ p.vs_plain.worse }} (net {{ "%.0f"|format(p.vs_plain.pnl_diff_total) }}){% else %}--{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </details>
+  {% endif %}
+</div>
+{% else %}
+<p class="muted">No scorecard data yet.</p>
+{% endfor %}

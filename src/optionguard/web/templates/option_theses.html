@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Option theses</h1>
+<p class="muted">Theses on the OPTION'S OWN PREMIUM (entry/target/stop), not the underlying's price -- see the Theses tab for that.</p>
+
+<div class="muted">
+  Last resolve/sync:
+  {% if sync_latest %}
+    {{ sync_latest.finished_at or sync_latest.started_at }} ({{ sync_latest.status }}) --
+    {{ sync_latest.counts }}
+  {% else %}
+    never
+  {% endif %}
+  <button type="button" class="secondary" hx-post="/option-theses/resolve-html" hx-target="#resolve-result" hx-swap="innerHTML" hx-disabled-elt="this">Resolve &amp; score</button>
+</div>
+<div id="resolve-result"></div>
+
+{% if expiring_unsynced %}
+<div class="mock-banner">{{ expiring_unsynced|length }} thesis(es) have contracts expiring within {{ expiry_warning_days }} trading days -- sync before expiry or their hold-policy result is lost.</div>
+{% endif %}
+
+<h2>New option thesis</h2>
+<form id="option-thesis-form" hx-on::after-swap="
+    if (event.target && event.target.id === 'ot-check-result') {
+      var id = event.target.querySelector('.card')?.dataset.checkId || '';
+      document.getElementById('ot-check_id').value = id;
+      document.getElementById('ot-check-id-hint').textContent = id ? 'Using check #' + id + ' -- Save uses this exact check.' : 'That did not return a usable check -- Save is disabled until one does.';
+    }
+  ">
+  <div class="row">
+    <div><label>Contract (SYMBOL MON STRIKE CE|PE)</label><input type="text" name="contract" id="ot-contract" value="{{ prefill_contract }}" placeholder="TCS NOV 2500 CE" required></div>
+    <div><label>Source</label>
+      <select name="source" id="ot-source">
+        <option value="kite">Kite (mock until real keys exist)</option>
+        <option value="manual">Manual</option>
+      </select>
+    </div>
+  </div>
+  <button type="button" class="secondary" hx-post="/checks-html" hx-include="[name='source']" hx-vals='js:{"text": document.getElementById("ot-contract").value}' hx-target="#ot-check-result" hx-swap="innerHTML">Run check</button>
+  <div id="ot-check-result"></div>
+  <p class="muted" id="ot-check-id-hint">{{ 'Using check #' + prefill_check_id + '.' if prefill_check_id else 'Run a check above before saving.' }}</p>
+  <input type="hidden" name="check_id" id="ot-check_id" value="{{ prefill_check_id }}">
+
+  <div class="row">
+    <div><label>Mode</label>
+      <select name="mode">
+        <option value="paper">Paper</option>
+        <option value="real">Real (Save &amp; buy)</option>
+      </select>
+    </div>
+    <div><label>Sector</label>
+      <select name="sector">
+        <option value="">(default for symbol)</option>
+        {% for name in sectors %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <label>Why (10-200 chars, the one-line reason for the trade)</label>
+  <input type="text" name="why" minlength="10" maxlength="200" required>
+
+  <div class="row">
+    <div><label>Target premium</label><input type="number" step="0.01" name="target_premium" id="ot-target" required></div>
+    <div><label>Stop premium</label><input type="number" step="0.01" name="stop_premium" id="ot-stop" required></div>
+    <div><label>Duration (trading days)</label><input type="number" name="duration_days" id="ot-duration" value="5" min="1" required></div>
+    <div><label>Lots</label><input type="number" name="lots" id="ot-lots" value="1" min="1" required></div>
+  </div>
+
+  <button type="button" class="secondary" hx-post="/option-theses/preview-html" hx-include="#option-thesis-form" hx-target="#ot-preview" hx-swap="innerHTML">Preview derived numbers</button>
+  <div id="ot-preview"></div>
+
+  <label>Override reason (required, 15+ chars, only if the check's verdict is red)</label>
+  <input type="text" name="override_reason" minlength="15">
+
+  <label>Notes (optional)</label>
+  <input type="text" name="notes">
+
+  <button type="button" hx-post="/option-theses-html" hx-include="#option-thesis-form" hx-target="#ot-create-result" hx-swap="innerHTML" hx-disabled-elt="this">Save</button>
+</form>
+<div id="ot-create-result"></div>
+
+<h2>Open</h2>
+{% if not open_theses %}<p class="muted">None.</p>{% endif %}
+{% for t in open_theses %}
+<div class="card">
+  <span class="badge {{ t.verdict }}">{{ t.verdict }}</span>
+  <span class="badge">{{ t.mode }}</span>
+  {% if t.data_source == "mock" %}<span class="badge mock">MOCK DATA</span>{% endif %}
+  <b>{{ t.symbol }} {{ t.expiry }} {{ t.strike }} {{ t.opt_type }}</b> <span class="muted">#{{ t.id }} {{ t.sector }}</span>
+  <div class="metrics">
+    <div><span>Stop</span> {{ t.stop_premium }}</div>
+    <div><span>Entry</span> {{ t.entry_premium }}</div>
+    <div><span>Live premium</span> {{ t.interim.live_premium if t.interim and t.interim.live_premium is not none else "n/a" }}</div>
+    <div><span>Target</span> {{ t.target_premium }}</div>
+    <div><span>Days left</span> {{ t.interim.days_left if t.interim else "n/a" }}</div>
+    <div><span>Reward:risk</span> {{ "%.2f"|format(t.reward_risk) }}</div>
+  </div>
+  <p class="muted">{{ t.why }}</p>
+
+  {% if t.mode == "real" and not t.trade_id %}
+  <details>
+    <summary class="muted">Link to a trade recorded elsewhere</summary>
+    <form hx-post="/option-theses/{{ t.id }}/link-trade-html" hx-target="#link-{{ t.id }}" hx-swap="innerHTML">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="number" name="trade_id" placeholder="trade id" required>
+      <button type="submit" class="secondary">Link</button>
+    </form>
+    <div id="link-{{ t.id }}"></div>
+  </details>
+  {% endif %}
+
+  {% if t.mode == "paper" %}
+  <details>
+    <summary class="muted">Manual exit</summary>
+    <form hx-post="/option-theses/{{ t.id }}/exit-html" hx-target="#exit-{{ t.id }}" hx-swap="innerHTML">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="row">
+        <div><label>Exit time (ISO)</label><input type="text" name="exit_time" placeholder="2026-11-18T10:30:00+05:30" required></div>
+        <div><label>Price</label><input type="number" step="0.01" name="price" required></div>
+        <div><label>Reason</label>
+          <select name="reason">
+            <option value="judgement">judgement</option>
+            <option value="news">news</option>
+            <option value="other">other</option>
+          </select>
+        </div>
+      </div>
+      <input type="text" name="text" placeholder="optional detail">
+      <button type="submit" class="secondary" onclick="return confirm('Record this manual exit?')">Exit</button>
+    </form>
+    <div id="exit-{{ t.id }}"></div>
+  </details>
+  {% endif %}
+
+  <details>
+    <summary class="muted">Cancel (requires reason)</summary>
+    <form hx-post="/option-theses/{{ t.id }}/cancel-html" hx-target="#cancel-{{ t.id }}" hx-swap="innerHTML" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="text" name="reason" minlength="15" placeholder="why cancel (15+ chars)" required>
+      <button type="submit" class="danger" onclick="return confirm('Cancel this thesis?')">Cancel thesis</button>
+    </form>
+    <div id="cancel-{{ t.id }}"></div>
+  </details>
+</div>
+{% endfor %}
+
+<h2>Closed and scored</h2>
+{% if not scored_theses %}<p class="muted">None yet.</p>{% endif %}
+{% for t in scored_theses %}
+<div class="card {{ 'green' if t.score.pnl > 0 else 'red' }}">
+  <span class="badge {{ t.verdict }}">{{ t.verdict }}</span>
+  <span class="badge">{{ t.mode }}</span>
+  <b>{{ t.symbol }} {{ t.expiry }} {{ t.strike }} {{ t.opt_type }}</b> <span class="muted">#{{ t.id }}</span>
+  <div class="metrics">
+    <div><span>Outcome</span> {{ t.outcome }}</div>
+    <div><span>Days held</span> {{ t.score.days_held }}</div>
+    <div><span>P&amp;L</span> {{ "%.0f"|format(t.score.pnl) }}</div>
+    <div><span>R</span> {{ "%.2f"|format(t.score.r_multiple) }}</div>
+    <div><span>MFE</span> {{ "%.0f"|format(t.score.mfe_pct*100) if t.score.mfe_pct is not none else "n/a" }}%</div>
+    <div><span>MAE</span> {{ "%.0f"|format(t.score.mae_pct*100) if t.score.mae_pct is not none else "n/a" }}%</div>
+    {% if t.score.target_after_stop %}<div><span>Target after stop</span> yes</div>{% endif %}
+  </div>
+  {% if t.score.flags %}
+  <ul class="flags"><li class="amber">{{ t.score.flags | join(", ") }}</li></ul>
+  {% endif %}
+  {% if t.policies %}
+  <details>
+    <summary class="muted">Policy comparison</summary>
+    <table>
+      <tr><th>Policy</th><th>Outcome</th><th>Days</th><th>P&amp;L</th><th>R</th></tr>
+      {% for p in t.policies %}
+      <tr>
+        <td>{{ p.policy }}</td>
+        <td>{{ "pending" if p.pending else p.outcome }}</td>
+        <td>{{ p.days_held if p.days_held is not none else "-" }}</td>
+        <td>{{ "%.0f"|format(p.pnl) if p.pnl is not none else "-" }}</td>
+        <td>{{ "%.2f"|format(p.r_multiple) if p.r_multiple is not none else "-" }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </details>
+  {% endif %}
+  {% if t.chart %}
+  <details>
+    <summary class="muted">Path chart (option premium, 15-min closes)</summary>
+    <svg viewBox="0 0 {{ t.chart.width }} {{ t.chart.height }}" width="100%" height="160">
+      <line x1="0" y1="{{ t.chart.stop_y }}" x2="{{ t.chart.width }}" y2="{{ t.chart.stop_y }}" stroke="#b42318" stroke-dasharray="4" />
+      <line x1="0" y1="{{ t.chart.entry_y }}" x2="{{ t.chart.width }}" y2="{{ t.chart.entry_y }}" stroke="#6b7280" />
+      <line x1="0" y1="{{ t.chart.target_y }}" x2="{{ t.chart.width }}" y2="{{ t.chart.target_y }}" stroke="#067647" stroke-dasharray="4" />
+      <polyline points="{{ t.chart.points }}" fill="none" stroke="#111" stroke-width="2" />
+      {% if t.chart.exit_x is not none %}<circle cx="{{ t.chart.exit_x }}" cy="{{ t.chart.exit_y }}" r="4" fill="#b42318" />{% endif %}
+    </svg>
+    <p class="muted">Black: option close. Grey: entry. Red dashed: stop. Green dashed: target. Red dot: exit.</p>
+  </details>
+  {% endif %}
+</div>
+{% endfor %}
+
+<h2>Scorecard</h2>
+<form hx-get="/option-theses/scorecard-html" hx-target="#ot-scorecard-body" hx-swap="innerHTML" hx-trigger="change">
+  <div class="row">
+    <div><label>Mode</label>
+      <select name="mode">
+        {% for m in ["all", "paper", "real"] %}
+        <option value="{{ m }}" {{ "selected" if m == mode else "" }}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div><label>Group by</label>
+      <select name="group_by">
+        {% for g in ["none", "sector", "verdict", "outcome", "symbol", "opt_type", "override", "month"] %}
+        <option value="{{ g }}" {{ "selected" if g == group_by else "" }}>{{ g }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+</form>
+<div id="ot-scorecard-body">
+  {% include "_option_theses_scorecard.html" %}
+</div>
+{% endblock %}

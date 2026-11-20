@@ -55,13 +55,19 @@ class KiteProvider:
     def _nfo_instruments(self) -> list[dict]:
         today = date.today()
         if self._nfo_cache is None or self._nfo_cache[0] != today:
-            self._nfo_cache = (today, self.client.instruments("NFO"))
+            try:
+                self._nfo_cache = (today, self.client.instruments("NFO"))
+            except Exception as exc:  # the real client raises various kiteconnect exceptions
+                raise NotAvailable(f"NFO instruments dump unavailable: {exc}") from exc
         return self._nfo_cache[1]
 
     def _nse_instruments(self) -> list[dict]:
         today = date.today()
         if self._nse_cache is None or self._nse_cache[0] != today:
-            self._nse_cache = (today, self.client.instruments("NSE"))
+            try:
+                self._nse_cache = (today, self.client.instruments("NSE"))
+            except Exception as exc:  # the real client raises various kiteconnect exceptions
+                raise NotAvailable(f"NSE instruments dump unavailable: {exc}") from exc
         return self._nse_cache[1]
 
     def _find_option(self, symbol: str, expiry: date, strike: float, opt_type: str) -> dict:
@@ -118,30 +124,104 @@ class KiteProvider:
             raise NotAvailable(f"No listed strikes for {symbol} {expiry}")
         return strikes
 
+    def option_instrument_token(self, symbol: str, expiry: date, strike: float, opt_type: str) -> int:
+        """Not part of the MarketProvider protocol -- manual mode has no
+        resolved instrument at all. Used by section 7.7's thesis journal to
+        fetch option bars for a contract later, by token rather than by
+        re-deriving a tradingsymbol string."""
+        return int(self._find_option(symbol, expiry, strike, opt_type)["instrument_token"])
+
     def has_gtt(self, symbol: str, expiry: date, strike: float, opt_type: str) -> bool:
         """True if an active GTT order in Kite is keyed to this exact
         contract. Not part of the MarketProvider protocol -- manual mode has
         no GTT concept at all, so callers only use this for kite/mock trades.
         """
         rec = self._find_option(symbol, expiry, strike, opt_type)
-        gtts = self.client.get_gtts()
+        try:
+            gtts = self.client.get_gtts()
+        except Exception as exc:  # the real client raises various kiteconnect exceptions
+            raise NotAvailable(f"GTT list unavailable: {exc}") from exc
         return any(
             g.get("status") == "active" and g.get("condition", {}).get("tradingsymbol") == rec["tradingsymbol"]
             for g in gtts
         )
 
+    # ---- orders / GTT placement (section 7.8) ------------------------------
+    # Deliberately NOT wrapped in try/except-NotAvailable like the read paths
+    # above: a rejection here (including the static-IP error) is exactly what
+    # orders/service.py needs to catch, store as kite_message, and show the
+    # user verbatim -- swallowing it into NotAvailable would hide it instead.
+    # No market/basket/bracket/cover orders (7.8 non-goals) -- variety and
+    # product are fixed, never passed in from the caller.
+
+    def place_order(
+        self, symbol: str, expiry: date, strike: float, opt_type: str, transaction_type: str,
+        quantity: int, order_type: str, price: float | None = None, tag: str | None = None,
+    ) -> str:
+        rec = self._find_option(symbol, expiry, strike, opt_type)
+        return str(self.client.place_order(
+            variety="regular", exchange=rec["exchange"], tradingsymbol=rec["tradingsymbol"],
+            transaction_type=transaction_type, quantity=quantity, product="NRML",
+            order_type=order_type, price=price, validity="DAY", tag=tag,
+        ))
+
+    def order_history(self, order_id: str) -> list[dict]:
+        return self.client.order_history(order_id)
+
+    def modify_order(self, order_id: str, *, price: float | None = None, quantity: int | None = None) -> str:
+        return str(self.client.modify_order(variety="regular", order_id=order_id, price=price, quantity=quantity))
+
+    def cancel_order(self, order_id: str) -> str:
+        return str(self.client.cancel_order(variety="regular", order_id=order_id))
+
+    def place_gtt(
+        self, symbol: str, expiry: date, strike: float, opt_type: str,
+        trigger_values: list[float], orders: list[dict],
+    ) -> int:
+        rec = self._find_option(symbol, expiry, strike, opt_type)
+        last_price = self.option_quote(symbol, expiry, strike, opt_type).last_price
+        trigger_type = "two-leg" if len(trigger_values) > 1 else "single"
+        return int(self.client.place_gtt(
+            trigger_type=trigger_type, tradingsymbol=rec["tradingsymbol"], exchange=rec["exchange"],
+            trigger_values=trigger_values, last_price=last_price, orders=orders,
+        ))
+
+    def get_gtt(self, trigger_id: int) -> dict:
+        return self.client.get_gtt(trigger_id)
+
+    def modify_gtt(
+        self, trigger_id: int, symbol: str, expiry: date, strike: float, opt_type: str,
+        trigger_values: list[float], orders: list[dict],
+    ) -> int:
+        rec = self._find_option(symbol, expiry, strike, opt_type)
+        last_price = self.option_quote(symbol, expiry, strike, opt_type).last_price
+        trigger_type = "two-leg" if len(trigger_values) > 1 else "single"
+        return int(self.client.modify_gtt(
+            trigger_id=trigger_id, trigger_type=trigger_type, tradingsymbol=rec["tradingsymbol"],
+            exchange=rec["exchange"], trigger_values=trigger_values, last_price=last_price, orders=orders,
+        ))
+
+    def delete_gtt(self, trigger_id: int) -> int:
+        return int(self.client.delete_gtt(trigger_id))
+
     def spot(self, symbol: str) -> float:
         rec = self._find_equity(symbol)
         key = f"{rec['exchange']}:{rec['tradingsymbol']}"
         self._quote_bucket.acquire()
-        quote = self.client.ltp([key])[key]
+        try:
+            quote = self.client.ltp([key])[key]
+        except Exception as exc:  # the real client raises various kiteconnect exceptions
+            raise NotAvailable(f"spot unavailable for {symbol}: {exc}") from exc
         return float(quote["last_price"])
 
     def option_quote(self, symbol: str, expiry: date, strike: float, opt_type: str) -> OptionQuote:
         rec = self._find_option(symbol, expiry, strike, opt_type)
         key = f"{rec['exchange']}:{rec['tradingsymbol']}"
         self._quote_bucket.acquire()
-        q = self.client.quote([key])[key]
+        try:
+            q = self.client.quote([key])[key]
+        except Exception as exc:  # the real client raises various kiteconnect exceptions
+            raise NotAvailable(f"option quote unavailable for {symbol} {expiry} {strike} {opt_type}: {exc}") from exc
         depth = q.get("depth", {})
         best_bid = float(depth["buy"][0]["price"]) if depth.get("buy") else None
         best_ask = float(depth["sell"][0]["price"]) if depth.get("sell") else None
@@ -168,7 +248,10 @@ class KiteProvider:
             raise NotAvailable(f"No contracts for {symbol} {expiry} at the requested strikes")
         keys = [f"{rec['exchange']}:{rec['tradingsymbol']}" for rec in recs]
         self._quote_bucket.acquire()
-        quotes = self.client.quote(keys)
+        try:
+            quotes = self.client.quote(keys)
+        except Exception as exc:  # the real client raises various kiteconnect exceptions
+            raise NotAvailable(f"chain quotes unavailable for {symbol} {expiry}: {exc}") from exc
         out = []
         for rec in recs:
             key = f"{rec['exchange']}:{rec['tradingsymbol']}"

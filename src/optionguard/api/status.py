@@ -11,6 +11,7 @@ from optionguard.config import get_config
 from optionguard.db import repo
 from optionguard.db.session import get_db
 from optionguard.market.factory import is_kite_mock
+from optionguard.orders.service import is_ip_error_message
 from optionguard.rules import guardrails
 
 router = APIRouter(prefix="/api/v1", tags=["status"])
@@ -35,6 +36,20 @@ def get_status(db: Session = Depends(get_db)):
         kite_session and kite_session.access_token and kite_session.valid_for == today
     )
 
+    # Section 7.8.2: ip_ok stays null until the first real order attempt,
+    # then false only if that attempt's rejection looks like Kite's
+    # static-IP error -- any other outcome (success, or a rejection for an
+    # unrelated reason) proves the round-trip to Kite itself is fine.
+    ip_ok = None
+    last_ip_error = None
+    latest_attempt = repo.get_latest_order_attempt(db)
+    if latest_attempt is not None:
+        if latest_attempt.status == "rejected" and is_ip_error_message(latest_attempt.kite_message):
+            ip_ok = False
+            last_ip_error = latest_attempt.kite_message
+        else:
+            ip_ok = True
+
     return {
         "kite_mode": "mock" if mock_mode else "live",
         "kite_mock_mode": mock_mode,
@@ -45,4 +60,5 @@ def get_status(db: Session = Depends(get_db)):
         "headroom": float(settings.monthly_loss_limit) + month_pnl,
         "in_cooloff": in_cooloff,
         "cooloff_trigger_date": trigger_date.isoformat() if trigger_date else None,
+        "orders": {"enabled": cfg.orders.enabled, "ip_ok": ip_ok, "last_ip_error": last_ip_error},
     }

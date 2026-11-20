@@ -1,15 +1,15 @@
-"""`optionguard serve`, `optionguard backfill-settle`. Per DESIGN.md section 4."""
+"""`optionguard serve`, `optionguard sync`, `optionguard backfill-settle`.
+Per DESIGN.md section 4, 7.8.6 and 7.9.6."""
 from __future__ import annotations
 
 import argparse
 import os
-from datetime import date, datetime, timezone
-
-from optionguard.config import get_config
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
     import uvicorn
+
+    from optionguard.config import get_config
 
     cfg = get_config()
     # Binding 127.0.0.1 is the right default for a bare `uv run optionguard serve` on
@@ -23,46 +23,37 @@ def cmd_serve(args: argparse.Namespace) -> None:
     uvicorn.run("optionguard.app:create_app", factory=True, host=host, port=cfg.server.port, reload=args.reload)
 
 
+def cmd_sync(args: argparse.Namespace) -> None:
+    """Sections 7.8.6 and 7.9.6: the full sync (reconcile orders/GTTs,
+    settle checks, option theses bars/resolve/score/policies), trigger="cli"."""
+    from optionguard.sync import SyncAlreadyRunningError, run_sync
+
+    try:
+        result = run_sync(trigger="cli")
+    except SyncAlreadyRunningError:
+        print("A sync is already running.")
+        return
+    print(f"Sync {result['status']}: {result['counts']}")
+    if result["errors"]:
+        print(f"{len(result['errors'])} error(s):")
+        for err in result["errors"]:
+            print(f"  {err}")
+
+
 def cmd_backfill_settle(args: argparse.Namespace) -> None:
-    """For checks with expiry < today and no expiry_settle, compute intrinsic
-    value from the underlying's close on expiry day. Kite/mock-sourced checks
-    only -- manual mode has no history to backfill from. A check tagged
-    "mock" is settled against mock history, never real history, even if
-    real credentials exist now -- its contract may not even be real."""
-    from optionguard.db import repo
+    """Alias that runs only the settle step of `sync` -- kept for anyone
+    used to running this on its own, e.g. from an existing cron entry."""
+    from datetime import date
+
     from optionguard.db.session import get_sessionmaker
-    from optionguard.market.base import NotAvailable
-    from optionguard.market.factory import apply_kite_session, get_kite_provider, get_mock_kite_provider
-    from optionguard.pricing.bs import intrinsic_value
+    from optionguard.sync import _settle_checks
 
     db = get_sessionmaker()()
     try:
-        today = date.today()
-        pending = repo.checks_pending_settlement(db, today)
-        if not pending:
-            print("Nothing to settle.")
-            return
-
-        apply_kite_session(db)
-        kite_provider = get_kite_provider()
-        mock_provider = get_mock_kite_provider()
-        settled = 0
-        for check in pending:
-            if check.data_source not in ("kite", "mock"):
-                continue
-            provider = mock_provider if check.data_source == "mock" else kite_provider
-            try:
-                bars = provider.history(check.symbol, days=400)
-            except NotAvailable:
-                continue
-            match = next((b for b in bars if b.day == check.expiry), None)
-            if match is None:
-                continue
-            check.expiry_settle = intrinsic_value(match.close, float(check.strike), check.opt_type)
-            check.settled_at = datetime.now(timezone.utc)
-            settled += 1
-        db.commit()
-        print(f"Settled {settled} of {len(pending)} pending checks.")
+        settled, errors = _settle_checks(db, date.today())
+        print(f"Settled {settled} check(s).")
+        for err in errors:
+            print(f"  {err}")
     finally:
         db.close()
 
@@ -75,7 +66,10 @@ def main() -> None:
     serve_p.add_argument("--reload", action="store_true")
     serve_p.set_defaults(func=cmd_serve)
 
-    backfill_p = sub.add_parser("backfill-settle", help="Backfill expiry_settle for past checks.")
+    sync_p = sub.add_parser("sync", help="Run the full sync: reconcile orders/GTTs, settle checks, option theses.")
+    sync_p.set_defaults(func=cmd_sync)
+
+    backfill_p = sub.add_parser("backfill-settle", help="Alias for just the settle step of `sync`.")
     backfill_p.set_defaults(func=cmd_backfill_settle)
 
     args = parser.parse_args()

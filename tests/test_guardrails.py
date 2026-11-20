@@ -55,7 +55,11 @@ def test_cooloff_triggers_after_monthly_limit_hit(db):
     settings = _settings(db, monthly_loss_limit=5000, cooloff_days=10)
     check = _check(db)
     today = date.today()
-    trigger_day = datetime(today.year, today.month, 5, tzinfo=timezone.utc)
+    # Trigger "today" itself (0 trading days elapsed) rather than a fixed
+    # day-of-month -- hardcoding e.g. "the 5th" drifts false once the real
+    # date advances far enough into the month that cooloff_days have
+    # already elapsed by the time this test runs.
+    trigger_day = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
     _closed_trade(db, check, exit_time=trigger_day, pnl=-6000)
 
     in_cooloff, trigger_date = guardrails.cooloff_status(db, settings, today, HOLIDAYS)

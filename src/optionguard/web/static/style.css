@@ -97,6 +97,14 @@ button.danger { background: var(--red); }
 .card.red { border-left-color: var(--red); }
 .card.amber { border-left-color: var(--amber); }
 .card.green { border-left-color: var(--green); }
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.card-header .btn { flex-shrink: 0; }
 .badge {
   display: inline-block;
   font-size: 11px;

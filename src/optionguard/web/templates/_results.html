@@ -4,11 +4,18 @@
 <p class="muted">Ranking: {% for id in ranking %}#{{ id }}{{ ", " if not loop.last }}{% endfor %}</p>
 
 {% for r in results %}
-<div class="card {{ r.verdict }}">
-  <span class="badge {{ r.verdict }}">{{ r.verdict }}</span>
-  {% if r.data_source == "mock" %}<span class="badge mock">MOCK DATA</span>{% endif %}
-  <b>{{ r.symbol }} {{ r.expiry }} {{ r.strike }} {{ r.opt_type }}</b>
-  <span class="muted">#{{ r.id }} ({{ r.data_source }})</span>
+<div class="card {{ r.verdict }}" data-check-id="{{ r.id }}">
+  <div class="card-header">
+    <div>
+      <span class="badge {{ r.verdict }}">{{ r.verdict }}</span>
+      {% if r.data_source == "mock" %}<span class="badge mock">MOCK DATA</span>{% endif %}
+      <b>{{ r.symbol }} {{ r.expiry }} {{ r.strike }} {{ r.opt_type }}</b>
+      <span class="muted">#{{ r.id }} ({{ r.data_source }})</span>
+    </div>
+    {% if r.data_source in ("kite", "mock") %}
+    <a class="btn" href="/order?check_id={{ r.id }}">Buy &rarr;</a>
+    {% endif %}
+  </div>
 
   <div class="metrics">
     <div><span>Spot</span> {{ "%.2f"|format(r.spot) }}</div>
@@ -65,7 +72,7 @@
   {% endif %}
 
   <details>
-    <summary class="muted">Take trade</summary>
+    <summary class="muted">Record a trade placed elsewhere</summary>
     <form hx-post="/trades-html" hx-target="#take-trade-{{ r.id }}" hx-swap="innerHTML">
       <input type="hidden" name="check_id" value="{{ r.id }}">
       <div class="row">
@@ -80,6 +87,8 @@
     </form>
     <div id="take-trade-{{ r.id }}"></div>
   </details>
+
+  <a class="muted" href="/option-theses?check_id={{ r.id }}&contract={{ ('%s %s %s %s'|format(r.symbol, r.expiry|month_abbr, r.strike|int, r.opt_type)) | urlencode }}">Add option thesis for this contract &rarr;</a>
 </div>
 {% endfor %}
 {% endif %}

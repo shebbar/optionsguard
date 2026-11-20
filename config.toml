@@ -54,3 +54,56 @@ dates = [
 # "mock" | "manual_only" | "kite"  -- selects the default source used by /checks
 # when the caller doesn't say. v1 default is "mock" since Kite keys aren't set up yet.
 default_source = "mock"
+
+# Section 7.7: thesis journal.
+
+[sectors]                # name = NSE index tradingsymbol used as the benchmark
+IT          = "NIFTY IT"
+Banking     = "NIFTY BANK"
+PSU_Bank    = "NIFTY PSU BANK"
+Financials  = "NIFTY FIN SERVICE"
+Auto        = "NIFTY AUTO"
+Infra       = "NIFTY INFRA"
+Energy      = "NIFTY ENERGY"
+Pharma      = "NIFTY PHARMA"
+FMCG        = "NIFTY FMCG"
+Metal       = "NIFTY METAL"
+Realty      = "NIFTY REALTY"
+Media       = "NIFTY MEDIA"
+Other       = "NIFTY 50"
+
+[symbol_sectors]         # optional defaults to pre-fill the form; user can override per thesis
+TCS = "IT"
+INFY = "IT"
+HCLTECH = "IT"
+ADANIENT = "Other"
+
+[orders]                 # section 7.8: order ticket. Master switch -- stays false (preview-only
+                          # ticket, no real placement) until a whitelisted static IP exists.
+enabled              = false
+allow_market         = false    # LIMIT only unless explicitly enabled
+market_protection    = 3         # percent; used only if allow_market = true
+gtt_limit_buffer_pct = 0.10      # GTT sell limit = trigger x (1 - buffer)
+fill_poll_seconds    = 2
+fill_poll_timeout_s  = 120       # stop polling after this; order stays tracked, see 7.8.4
+entry_cutoff         = "15:15"   # IST; no new entries after this
+egress_proxy         = ""        # optional, e.g. "http://10.8.0.1:3128" -- order calls only
+
+[option_theses]           # section 7.9: option theses (entry/target/stop on the contract itself)
+market_benchmark          = "NIFTY 50"
+min_duration_days         = 1     # trading days
+max_duration_days         = 20
+hold_cutoff_calendar_days = 7     # hold cutoff = last trading day on/before (expiry - this many calendar days)
+expiry_warning_days       = 3     # warn when an unresolved thesis's contract expires within this many calendar days
+paper_slippage_pct        = 0.01  # applied against the user on paper exits (sell lower, stop worse)
+late_exit_flag_days       = 1     # a manual exit entered later than this after its exit time is flagged
+mc_paths                  = 20000 # Monte Carlo paths for mkt_prob_target_first (7.9.4)
+mc_steps_per_day          = 25    # ~ 15-minute steps
+mc_seed                   = 7
+findings_min_n            = 10
+
+[option_theses.policies]  # exit policies scored side by side (7.9.7)
+grace_days             = 3      # trading days, counting the entry day as day 1
+disaster_stop_pct      = 0.60   # during grace, exit only if the option falls this far below entry
+time_checkpoints       = [5, 8, 11]  # trading days, entry day = day 1
+time_stop_min_gain_pct = 0.0    # at a checkpoint's close, exit unless the option is at least this far above entry

@@ -8,6 +8,7 @@ import os
 from urllib.parse import urlsplit, urlunsplit
 
 import pytest
+import sqlalchemy as sa
 
 
 def _base_db_url() -> str:
@@ -52,8 +53,14 @@ def _db_setup():
     engine = get_engine()
     # Drop and recreate every session -- this DB is throwaway, and create_all
     # alone won't pick up constraint changes on tables that already exist
-    # from an earlier test run against a stale schema.
-    Base.metadata.drop_all(engine)
+    # from an earlier test run against a stale schema. metadata.drop_all()
+    # itself can get stuck the same way: it diffs against *current* model
+    # metadata, so a use_alter FK that didn't exist in an older test-DB
+    # schema makes it try to drop a constraint that was never created.
+    # Resetting the whole schema sidesteps that instead of chasing it.
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP SCHEMA public CASCADE"))
+        conn.execute(sa.text("CREATE SCHEMA public"))
     Base.metadata.create_all(engine)
     yield
     engine.dispose()
@@ -69,8 +76,9 @@ def db():
     yield session
     session.close()
     with engine.begin() as conn:
-        for table in reversed(Base.metadata.sorted_tables):
-            conn.execute(table.delete())
+        # TRUNCATE ... CASCADE handles FK ordering across all tables in one statement.
+        names = ", ".join(t.name for t in Base.metadata.sorted_tables)
+        conn.execute(sa.text(f"TRUNCATE TABLE {names} CASCADE"))
 
 
 @pytest.fixture(autouse=True)
@@ -96,3 +104,29 @@ def client(db):
 
     with TestClient(create_app()) as c:
         yield c
+
+
+@pytest.fixture
+def mock_mode(monkeypatch):
+    """Forces mock-backed Kite behaviour regardless of real credentials in
+    the ambient .env, and returns the always-mock KiteProvider -- shared by
+    the section 7.7 and 7.8 test modules that each used to define this
+    locally."""
+    from optionguard.market import factory
+
+    monkeypatch.setattr(factory, "is_kite_mock", lambda: True)
+    factory.get_kite_client.cache_clear()
+    return factory.get_mock_kite_provider()
+
+
+@pytest.fixture
+def orders_enabled():
+    """[orders].enabled is a mutable attribute on the lru_cache'd Config
+    singleton -- flip it on for a test, then always flip it back off so it
+    can't leak into a later test."""
+    from optionguard.config import get_config
+
+    cfg = get_config()
+    cfg.orders.enabled = True
+    yield cfg
+    cfg.orders.enabled = False

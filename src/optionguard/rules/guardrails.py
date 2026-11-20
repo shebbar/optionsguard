@@ -7,12 +7,13 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy.orm import Session
 
 from optionguard.db import repo
-from optionguard.db.models import Check, Settings, Trade
+from optionguard.db.models import Check, OptionThesis, Settings, Trade
 from optionguard.pricing.calendar import IST, next_trading_day, trading_days_between
 from optionguard.rules.errors import RuleViolation
 
 CHECK_STALE_AFTER = timedelta(minutes=30)
 MIN_REASON_LEN = 15
+ORDER_PRICE_FAT_FINGER_PCT = 0.05  # section 7.8.4
 
 
 # ---- monthly P&L / cooling-off -----------------------------------------
@@ -91,6 +92,76 @@ def guard_record_trade(
                 f"This candidate is a red verdict -- provide a reason (>= {MIN_REASON_LEN} chars) to override.",
                 overridable=True,
             )
+
+
+# ---- order ticket (section 7.8.4) ---------------------------------------
+
+def guard_order_price(price: float, live_reference: float) -> None:
+    """Fat-finger guard: the limit must be within 5% of the live LTP."""
+    if live_reference <= 0 or abs(price - live_reference) > ORDER_PRICE_FAT_FINGER_PCT * live_reference:
+        raise RuleViolation(
+            "PRICE_OFF_MARKET",
+            f"Limit price {price} is more than {ORDER_PRICE_FAT_FINGER_PCT:.0%} away from the live "
+            f"reference ({live_reference}).",
+            overridable=False,
+        )
+
+
+def guard_no_live_order_intent(existing) -> None:
+    """No second live (reviewed/placed) intent on the same contract."""
+    if existing is not None:
+        raise RuleViolation(
+            "ORDER_IN_PROGRESS", f"An order is already in progress for this contract (intent id={existing.id}).",
+            overridable=False,
+        )
+
+
+def guard_stop_no_looser_than_settings(stop_premium: float, reference_price: float, settings: Settings) -> None:
+    min_stop = reference_price * (1 - float(settings.premium_stop_pct))
+    if stop_premium < min_stop - 1e-9:
+        raise RuleViolation(
+            "STOP_TOO_LOOSE",
+            f"Stop {stop_premium} is looser than settings' default ({settings.premium_stop_pct:.0%} of {reference_price}).",
+            overridable=False,
+        )
+
+
+def guard_thesis_tighten_only(thesis: OptionThesis, *, lots: int, stop_premium: float, target_premium: float | None) -> None:
+    """Section 7.9.10: an entry ticket opened from a real option thesis may
+    tighten lots/stop/target but never loosen them -- smaller size, a
+    stop no further from entry, a target no further from entry."""
+    if lots > thesis.lots:
+        raise RuleViolation(
+            "THESIS_LOOSENED", f"{lots} lots is more than the thesis's planned {thesis.lots}.", overridable=False,
+        )
+    if stop_premium < float(thesis.stop_premium) - 1e-9:
+        raise RuleViolation(
+            "THESIS_LOOSENED",
+            f"Stop {stop_premium} is looser than the thesis's planned stop {float(thesis.stop_premium)}.",
+            overridable=False,
+        )
+    if target_premium is not None and target_premium > float(thesis.target_premium) + 1e-9:
+        raise RuleViolation(
+            "THESIS_LOOSENED",
+            f"Target {target_premium} is looser than the thesis's planned target {float(thesis.target_premium)}.",
+            overridable=False,
+        )
+
+
+def guard_intent_not_expired(intent, now: datetime, max_age: timedelta) -> None:
+    if now - intent.created_at > max_age:
+        raise RuleViolation("INTENT_EXPIRED", "This review has expired -- run Review again before Confirm.", overridable=False)
+
+
+def guard_exit_quantity(quantity: int, trade: Trade) -> None:
+    if trade.status != "open":
+        raise RuleViolation("TRADE_NOT_OPEN", f"Trade {trade.id} is not open.", overridable=False)
+    open_qty = trade.lots * trade.lot_size
+    if quantity <= 0 or quantity > open_qty:
+        raise RuleViolation(
+            "INVALID_EXIT_QUANTITY", f"Exit quantity must be between 1 and the open quantity ({open_qty}).",
+            overridable=False,
+        )
 
 
 # ---- tighten_stop / loosen_stop -----------------------------------------

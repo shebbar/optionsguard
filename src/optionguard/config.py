@@ -64,6 +64,47 @@ class MarketDataConfig(BaseModel):
     default_source: str = "mock"
 
 
+class OrdersConfig(BaseModel):
+    """Section 7.8: order ticket. `enabled` is the master switch -- the
+    ticket renders preview-only (no real placement) while it's false, which
+    is the right default until a whitelisted static IP exists (Kite rejects
+    order endpoints -- place/modify/cancel/GTT -- from unwhitelisted IPs)."""
+
+    enabled: bool = False
+    allow_market: bool = False
+    market_protection: int = 3
+    gtt_limit_buffer_pct: float = 0.10
+    fill_poll_seconds: int = 2
+    fill_poll_timeout_s: int = 120
+    entry_cutoff: str = "15:15"
+    egress_proxy: str = ""
+
+
+class OptionThesesPoliciesConfig(BaseModel):
+    grace_days: int = 3
+    disaster_stop_pct: float = 0.60
+    time_checkpoints: list[int] = [5, 8, 11]
+    time_stop_min_gain_pct: float = 0.0
+
+
+class OptionThesesConfig(BaseModel):
+    """Section 7.9: theses on the option contract itself (entry/target/stop
+    premium, scored from the option's own price)."""
+
+    market_benchmark: str = "NIFTY 50"
+    min_duration_days: int = 1
+    max_duration_days: int = 20
+    hold_cutoff_calendar_days: int = 7
+    expiry_warning_days: int = 3
+    paper_slippage_pct: float = 0.01
+    late_exit_flag_days: int = 1
+    mc_paths: int = 20000
+    mc_steps_per_day: int = 25
+    mc_seed: int = 7
+    findings_min_n: int = 10
+    policies: OptionThesesPoliciesConfig = OptionThesesPoliciesConfig()
+
+
 class Config(BaseModel):
     server: ServerConfig = ServerConfig()
     pricing: PricingConfig = PricingConfig()
@@ -71,6 +112,12 @@ class Config(BaseModel):
     verdict: VerdictConfig = VerdictConfig()
     holidays: HolidaysConfig = HolidaysConfig()
     market_data: MarketDataConfig = MarketDataConfig()
+    # sectors: sector name -> NSE index tradingsymbol, used by option theses (7.9) to
+    # resolve a contract's sector. symbol_sectors: optional per-symbol sector defaults.
+    sectors: dict[str, str] = {}
+    symbol_sectors: dict[str, str] = {}
+    orders: OrdersConfig = OrdersConfig()
+    option_theses: OptionThesesConfig = OptionThesesConfig()
     secrets: Secrets = Secrets()
 
 
