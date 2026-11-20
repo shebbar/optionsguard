@@ -94,6 +94,8 @@
     <div><span>Target</span> {{ t.target_premium }}</div>
     <div><span>Days left</span> {{ t.interim.days_left if t.interim else "n/a" }}</div>
     <div><span>Reward:risk</span> {{ "%.2f"|format(t.reward_risk) }}</div>
+    <div><span>Prob target first</span> {{ "%.0f"|format(t.mkt_prob_target_first*100) + "%" if t.mkt_prob_target_first is not none else "n/a" }}</div>
+    <div><span>Prob stop first</span> {{ "%.0f"|format(t.mkt_prob_stop_first*100) + "%" if t.mkt_prob_stop_first is not none else "n/a" }}</div>
   </div>
   <p class="muted">{{ t.why }}</p>
 
